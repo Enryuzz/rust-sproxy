@@ -1,0 +1,10 @@
+# The file is reread for every new client connection. Edit it while the
+# server is running to add, remove, or reorder upstream proxies. Replace this
+# file atomically (temporary file + rename), rather than writing it in place.
+# Credentials below are sent in plaintext by these proxy protocols; use only
+# trusted/private network paths or an encrypted tunnel.
+upstreams = [
+  "http://username:password@127.0.0.1:8080",
+  "socks4://127.0.0.1:1081",
+  "socks5://username:password@127.0.0.1:1082",
+]
