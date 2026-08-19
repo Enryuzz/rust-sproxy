@@ -1,6 +1,4 @@
-# The file is reread for every new client connection. Edit it while the
-# server is running to add, remove, or reorder upstream proxies. Replace this
-# file atomically (temporary file + rename), rather than writing it in place.
+# The file is loaded once. Restart the server after changing upstream proxies.
 # Credentials below are sent in plaintext by these proxy protocols; use only
 # trusted/private network paths or an encrypted tunnel.
 upstreams = [

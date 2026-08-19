@@ -13,7 +13,7 @@ struct Args {
     #[arg(short, long, default_value = "127.0.0.1:1080")]
     listen: SocketAddr,
 
-    /// TOML file containing the upstream proxy URLs.
+    /// TOML file containing upstream proxy URLs. A missing file enables direct mode.
     #[arg(short, long, default_value = "sproxy.toml")]
     config: PathBuf,
 
@@ -73,10 +73,7 @@ async fn main() -> Result<()> {
         args.listener_type,
         listener.local_addr()?
     );
-    println!(
-        "loading upstream proxies dynamically from {}",
-        args.config.display()
-    );
+    println!("loading upstream proxies from {}", args.config.display());
     serve_with_protocol(
         listener,
         args.config,

@@ -1,0 +1,5 @@
+implementation,protocol,requests,sequential_successful,concurrent_successful,seq_avg_ms,seq_p95_ms,concurrent_wall_s,requests_per_s,throughput_mbps,cpu_s,peak_rss_kib
+rust,socks5,500,500,500,1.644,2.069,0.530071,943.27,12226.69,0.810,5964
+pproxy,socks5,500,500,500,2.215,2.890,0.649125,770.27,6237.61,1.900,24884
+rust,http,500,500,500,1.620,1.985,0.556716,898.12,12493.65,0.870,6184
+pproxy,http,500,500,500,1.796,2.564,0.565001,884.95,6814.25,1.610,24132

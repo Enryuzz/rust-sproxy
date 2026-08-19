@@ -12,8 +12,8 @@ A concurrent SOCKS5, SOCKS4/SOCKS4a, or HTTP CONNECT server that dynamically cha
 - SOCKS4 and SOCKS4a upstreams
 - SOCKS5 upstreams with no authentication or username/password authentication
 - Round-robin selection across all configured upstreams
-- Direct mode when `upstreams = []`
-- Dynamic reload: the TOML file is read for every new connection, so no restart is needed
+- Direct mode when `upstreams = []` or the configuration file does not exist
+- Configuration is loaded once and cached for all connections
 - Asynchronous bidirectional tunneling with Tokio
 
 ## Build and run
@@ -55,11 +55,11 @@ upstreams = [
 ]
 ```
 
-Supported schemes are `http`, `socks4`, `socks4a`, `socks5`, and `socks5h`. Selection is round-robin. Set `upstreams = []` to connect directly without an upstream proxy. Change and save this file at runtime; the next connection observes the new list.
+Supported schemes are `http`, `socks4`, `socks4a`, `socks5`, and `socks5h`. Selection is round-robin. Set `upstreams = []` to connect directly without an upstream proxy. Restart the process after changing this file.
+
+If the configured TOML file does not exist, the server defaults to direct mode. Existing files that cannot be read or parsed still produce connection failures. **A misspelled configuration path therefore bypasses upstream proxies and connects directly; verify the path when upstream routing is required.**
 
 Credentials are percent-decoded as UTF-8. Percent-encode reserved characters in usernames or passwords. Protect the configuration file because it can contain plaintext credentials. **HTTP Basic, SOCKS4 user IDs, and SOCKS5 username/password authentication transmit these credentials in plaintext on the network**; use only trusted/private upstream links (or a separate encrypted tunnel).
-
-For safe dynamic reloads, write and validate a complete temporary file and then atomically rename it over the configured path. Do not edit the live file in place: a connection arriving during a partial write will receive a proxy failure response.
 
 ## Current scope
 

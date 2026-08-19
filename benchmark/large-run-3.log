@@ -1,0 +1,6 @@
+Target: local HTTP server; requests=500 concurrency=50 payload=512 MiB
+rust    socks5 avg=   1.855 ms p95=   2.284 ms concurrent=   25.57 req/s throughput= 12087.30 Mbit/s CPU= 0.920 s RSS=    6068 KiB
+pproxy  socks5 avg=   2.057 ms p95=   2.804 ms concurrent=   52.43 req/s throughput=  5679.00 Mbit/s CPU= 1.910 s RSS=   24084 KiB
+rust    http   avg=   1.735 ms p95=   2.144 ms concurrent=   26.21 req/s throughput= 11149.76 Mbit/s CPU= 0.980 s RSS=    5912 KiB
+pproxy  http   avg=   2.078 ms p95=   2.738 ms concurrent=   64.58 req/s throughput=  5541.14 Mbit/s CPU= 1.940 s RSS=   24316 KiB
+CSV written to benchmark/large-run-3.csv

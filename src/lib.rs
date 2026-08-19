@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Semaphore;
+use tokio::sync::{OnceCell, Semaphore};
 use tokio::time::timeout;
 use url::Url;
 
@@ -19,6 +19,7 @@ struct ProxyConfig {
 pub struct RuntimeProxyPool {
     path: PathBuf,
     cursor: AtomicUsize,
+    routes: OnceCell<Vec<UpstreamProxy>>,
 }
 
 impl RuntimeProxyPool {
@@ -26,6 +27,7 @@ impl RuntimeProxyPool {
         Self {
             path,
             cursor: AtomicUsize::new(0),
+            routes: OnceCell::new(),
         }
     }
 
@@ -36,16 +38,34 @@ impl RuntimeProxyPool {
     }
 
     async fn next_route(&self) -> Result<Option<UpstreamProxy>> {
-        let content = tokio::fs::read_to_string(&self.path)
-            .await
-            .with_context(|| format!("failed to read config {}", self.path.display()))?;
-        let config: ProxyConfig =
-            toml::from_str(&content).context("invalid proxy configuration")?;
-        if config.upstreams.is_empty() {
+        let routes = self
+            .routes
+            .get_or_try_init(|| async {
+                let content = match tokio::fs::read_to_string(&self.path).await {
+                    Ok(content) => content,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        return Ok(Vec::new());
+                    }
+                    Err(error) => {
+                        return Err(error).with_context(|| {
+                            format!("failed to read config {}", self.path.display())
+                        });
+                    }
+                };
+                let config: ProxyConfig =
+                    toml::from_str(&content).context("invalid proxy configuration")?;
+                config
+                    .upstreams
+                    .iter()
+                    .map(|value| UpstreamProxy::parse(value))
+                    .collect()
+            })
+            .await?;
+        if routes.is_empty() {
             return Ok(None);
         }
-        let index = self.cursor.fetch_add(1, Ordering::Relaxed) % config.upstreams.len();
-        UpstreamProxy::parse(&config.upstreams[index]).map(Some)
+        let index = self.cursor.fetch_add(1, Ordering::Relaxed) % routes.len();
+        Ok(Some(routes[index].clone()))
     }
 }
 

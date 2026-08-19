@@ -1,0 +1,5 @@
+implementation,protocol,runs,sequential_successful,concurrent_successful,avg_latency_ms,median_latency_ms,avg_p95_ms,median_p95_ms,avg_requests_per_s,median_requests_per_s,avg_throughput_mbps,median_throughput_mbps,avg_cpu_s,avg_peak_rss_kib
+rust,socks5,5,2500,2500,1.841,1.855,2.261,2.265,25.74,25.57,12781.29,12631.44,0.924,5946
+pproxy,socks5,5,2500,2500,2.158,2.154,2.828,2.806,43.93,41.33,6034.93,5889.56,1.876,24106
+rust,http,5,2500,2500,1.806,1.798,2.180,2.188,25.35,26.21,11194.90,11149.76,1.000,6094
+pproxy,http,5,2500,2500,2.074,2.078,2.740,2.738,49.03,44.28,6156.56,5941.43,1.844,24167

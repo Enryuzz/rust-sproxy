@@ -1,11 +1,12 @@
 use rust_sproxy::{serve, RuntimeProxyPool};
+use std::path::PathBuf;
 use std::time::Duration;
-use tempfile::NamedTempFile;
+use tempfile::{tempdir, NamedTempFile};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::test]
-async fn reloads_proxy_file_and_selects_upstreams_round_robin() {
+async fn loads_proxy_file_once_and_selects_upstreams_round_robin() {
     let file = NamedTempFile::new().unwrap();
     std::fs::write(
         file.path(),
@@ -19,7 +20,7 @@ async fn reloads_proxy_file_and_selects_upstreams_round_robin() {
     assert_eq!(pool.next().await.unwrap().address(), "127.0.0.1:8001");
 
     std::fs::write(file.path(), "upstreams = [\"socks5://127.0.0.1:9001\"]\n").unwrap();
-    assert_eq!(pool.next().await.unwrap().address(), "127.0.0.1:9001");
+    assert_eq!(pool.next().await.unwrap().address(), "127.0.0.1:8002");
 }
 
 #[tokio::test]
@@ -85,6 +86,18 @@ async fn socks5_server_relays_via_configured_upstream() {
 
 #[tokio::test]
 async fn empty_upstream_list_connects_directly() {
+    let file = NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), "upstreams = []\n").unwrap();
+    assert_direct_connection(file.path().to_owned()).await;
+}
+
+#[tokio::test]
+async fn missing_proxy_file_connects_directly() {
+    let directory = tempdir().unwrap();
+    assert_direct_connection(directory.path().join("missing.toml")).await;
+}
+
+async fn assert_direct_connection(config_path: PathBuf) {
     let target_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let target_addr = target_listener.local_addr().unwrap();
     let target = tokio::spawn(async move {
@@ -95,11 +108,8 @@ async fn empty_upstream_list_connects_directly() {
         stream.write_all(b"world").await.unwrap();
     });
 
-    let file = NamedTempFile::new().unwrap();
-    std::fs::write(file.path(), "upstreams = []\n").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server_addr = listener.local_addr().unwrap();
-    let config_path = file.path().to_owned();
     let server = tokio::spawn(async move { serve(listener, config_path).await });
 
     let mut client = TcpStream::connect(server_addr).await.unwrap();
