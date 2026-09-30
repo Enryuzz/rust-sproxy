@@ -60,7 +60,13 @@ while (($#)); do
     esac
 done
 
-bash "$ROOT/scripts/build.sh" "--$PROFILE" "${BUILD_ARGS[@]}"
+# Bash 3.2 on macOS treats expansion of an empty array as an unset
+# parameter under `set -u`. Expand BUILD_ARGS only when it has values.
+if ((${#BUILD_ARGS[@]} > 0)); then
+    bash "$ROOT/scripts/build.sh" "--$PROFILE" "${BUILD_ARGS[@]}"
+else
+    bash "$ROOT/scripts/build.sh" "--$PROFILE"
+fi
 if (($# == 0)); then
     set -- "${DEFAULT_SERVER_ARGS[@]}"
 fi
