@@ -9,9 +9,9 @@ fn help_exposes_listener_type_with_socks5_default() {
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
     assert!(help.contains("--type <TYPE>"), "{help}");
-    assert!(help.contains("[default: socks5]"), "{help}");
+    assert!(help.contains("[default: auto]"), "{help}");
     assert!(
-        help.contains("[possible values: socks5, socks4, http]"),
+        help.contains("[possible values: socks5, socks4, http, auto]"),
         "{help}"
     );
 }

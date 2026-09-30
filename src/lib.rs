@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -473,6 +474,8 @@ pub enum ListenerProtocol {
     Socks5,
     Socks4,
     Http,
+    /// Detect SOCKS5, SOCKS4, or HTTP CONNECT from the client's first byte.
+    Auto,
 }
 
 #[derive(Clone, Debug)]
@@ -485,7 +488,10 @@ impl Default for ServerOptions {
     fn default() -> Self {
         Self {
             handshake_timeout: Duration::from_secs(10),
-            max_connections: 1024,
+            // A tunnel uses two sockets (client and upstream). Keep the default
+            // below the common 1024-descriptor soft limit and leave room for
+            // the listener, config file, and the rest of the process.
+            max_connections: 256,
         }
     }
 }
@@ -511,7 +517,21 @@ pub async fn serve_with_protocol(
     let permits = Arc::new(Semaphore::new(options.max_connections));
     loop {
         let permit = permits.clone().acquire_owned().await?;
-        let (client, peer) = listener.accept().await?;
+        let (client, peer) = match listener.accept().await {
+            Ok(connection) => connection,
+            Err(error) if is_file_descriptor_exhaustion(&error) => {
+                // The process may temporarily run out of descriptors even when
+                // max_connections is configured correctly (for example because
+                // another part of the process or the OS has consumed them).
+                // Do not terminate the server; wait for an existing tunnel to
+                // close and then try accepting again.
+                drop(permit);
+                eprintln!("accept failed: {error}; retrying");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
         let pool = pool.clone();
         let handshake_timeout = options.handshake_timeout;
         tokio::spawn(async move {
@@ -520,10 +540,18 @@ pub async fn serve_with_protocol(
                     if let Err(error) =
                         tokio::io::copy_bidirectional(&mut client, &mut upstream).await
                     {
-                        eprintln!("connection from {peer} relay failed: {error:#}");
+                        if !is_expected_disconnect(&error) {
+                            eprintln!("connection from {peer} relay failed: {error:#}");
+                        }
                     }
                 }
-                Ok(Err(error)) => eprintln!("connection from {peer} failed: {error:#}"),
+                Ok(Err(error)) => {
+                    // A client asking an HTTP listener to handle GET/POST/etc.
+                    // is an expected protocol rejection, not a server failure.
+                    if error.downcast_ref::<ClientRequestRejected>().is_none() {
+                        eprintln!("connection from {peer} failed: {error:#}");
+                    }
+                }
                 Err(error) => eprintln!("connection from {peer} failed: client handshake {error}"),
             }
             drop(permit);
@@ -531,15 +559,66 @@ pub async fn serve_with_protocol(
     }
 }
 
+fn is_file_descriptor_exhaustion(error: &std::io::Error) -> bool {
+    // Linux reports EMFILE as 24 and ENFILE as 23. Tokio exposes these from
+    // accept(2) as an ordinary I/O error rather than a dedicated ErrorKind.
+    cfg!(target_os = "linux") && matches!(error.raw_os_error(), Some(23 | 24))
+}
+
+fn is_expected_disconnect(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::UnexpectedEof
+            | std::io::ErrorKind::TimedOut
+    ) || matches!(
+        error.raw_os_error(),
+        // macOS: ECONNRESET (54), ETIMEDOUT (60)
+        // Linux: ECONNRESET (104), ETIMEDOUT (110)
+        // Windows: WSAECONNRESET (10054), WSAETIMEDOUT (10060)
+        Some(54 | 60 | 104 | 110 | 10054 | 10060)
+    )
+}
+
+#[derive(Debug)]
+struct ClientRequestRejected(&'static str);
+
+impl fmt::Display for ClientRequestRejected {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+impl std::error::Error for ClientRequestRejected {}
+
 async fn establish_client(
     client: TcpStream,
     pool: &RuntimeProxyPool,
     protocol: ListenerProtocol,
 ) -> Result<(TcpStream, TcpStream)> {
+    let protocol = if protocol == ListenerProtocol::Auto {
+        let mut first = [0_u8; 1];
+        // Peek without consuming the byte: protocol handlers read the entire
+        // handshake themselves. The existing handshake timeout covers this wait.
+        if client.peek(&mut first).await? == 0 {
+            bail!("client closed before sending a handshake");
+        }
+        match first[0] {
+            5 => ListenerProtocol::Socks5,
+            4 => ListenerProtocol::Socks4,
+            b'A'..=b'Z' | b'a'..=b'z' => ListenerProtocol::Http,
+            _ => bail!("unrecognized client protocol"),
+        }
+    } else {
+        protocol
+    };
     match protocol {
         ListenerProtocol::Socks5 => establish_socks5(client, pool).await,
         ListenerProtocol::Socks4 => establish_socks4(client, pool).await,
         ListenerProtocol::Http => establish_http(client, pool).await,
+        ListenerProtocol::Auto => unreachable!("auto protocol has already been detected"),
     }
 }
 
@@ -703,7 +782,7 @@ async fn establish_http(
         client
             .write_all(b"HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n")
             .await?;
-        bail!("HTTP listener supports CONNECT only");
+        return Err(ClientRequestRejected("HTTP listener supports CONNECT only").into());
     }
     let target = match parse_http_authority(authority) {
         Ok(target) => target,

@@ -10,28 +10,28 @@ use tokio::net::TcpListener;
 #[command(version, about)]
 struct Args {
     /// Address on which the proxy server listens.
-    #[arg(short, long, default_value = "127.0.0.1:1080")]
+    #[arg(short, long, default_value = "0.0.0.0:8181")]
     listen: SocketAddr,
 
     /// TOML file containing upstream proxy URLs. A missing file enables direct mode.
     #[arg(short, long, default_value = "sproxy.toml")]
     config: PathBuf,
 
-    /// Client-facing listener protocol.
+    /// Client-facing listener protocol. Auto detects SOCKS5, SOCKS4, and HTTP CONNECT.
     #[arg(
         long = "type",
         value_enum,
         value_name = "TYPE",
-        default_value_t = ListenerType::Socks5
+        default_value_t = ListenerType::Auto
     )]
     listener_type: ListenerType,
 
-    /// Explicitly permit this unauthenticated proxy to listen off loopback.
-    #[arg(long)]
+    /// Permit this unauthenticated proxy to listen off loopback (enabled by default).
+    #[arg(long, default_value_t = true)]
     allow_public_listen: bool,
 
     /// Maximum simultaneous client connections.
-    #[arg(long, default_value_t = 1024)]
+    #[arg(long, default_value_t = ServerOptions::default().max_connections)]
     max_connections: usize,
 
     /// Maximum seconds for client and upstream handshakes.
@@ -44,6 +44,7 @@ enum ListenerType {
     Socks5,
     Socks4,
     Http,
+    Auto,
 }
 
 impl From<ListenerType> for ListenerProtocol {
@@ -52,6 +53,7 @@ impl From<ListenerType> for ListenerProtocol {
             ListenerType::Socks5 => Self::Socks5,
             ListenerType::Socks4 => Self::Socks4,
             ListenerType::Http => Self::Http,
+            ListenerType::Auto => Self::Auto,
         }
     }
 }
